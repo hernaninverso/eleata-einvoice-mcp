@@ -1,0 +1,51 @@
+{
+  "name": "@eleata/einvoice-mcp",
+  "version": "0.1.0",
+  "description": "MCP server to validate EU e-invoices (Peppol, XRechnung, Factur-X, UBL/CII) and explain validation error codes — for AI coding agents (Claude, Cursor, Copilot).",
+  "type": "module",
+  "bin": {
+    "eleata-einvoice-mcp": "dist/index.js"
+  },
+  "files": [
+    "dist",
+    "error-fixes.json",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "e-invoice",
+    "einvoice",
+    "peppol",
+    "xrechnung",
+    "fatturapa",
+    "factur-x",
+    "zugferd",
+    "en16931",
+    "ubl",
+    "validation",
+    "eu-invoicing"
+  ],
+  "license": "MIT",
+  "author": "eleata",
+  "homepage": "https://eleata.io",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/hernaninverso/eleata-einvoice-mcp.git"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0",
+    "@types/node": "^22.0.0"
+  }
+}

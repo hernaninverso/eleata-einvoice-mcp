@@ -1,0 +1,268 @@
+{
+  "_comment": "Error -> fix mapping, first wave: FatturaPA (SdI 00xxx) + XRechnung (BR-DE-*). Edit freely; surfaced by error_fixes.py and by the /error/{rule-id} content pages. Keep entries factual and version-agnostic where possible.",
+  "docs_base": "https://eleata.io/error/",
+  "rules": {
+    "00200": {
+      "format": "fatturapa",
+      "title": "File non conforme al formato (schema XSD)",
+      "explanation": "The FatturaPA XML does not conform to the official AgID schema (Schema_del_file_xml_FatturaPA v1.2.x): a required element is missing, an element is in the wrong order, or a value does not match the type/pattern/enumeration the schema allows.",
+      "suggested_fix": "Read the schema-violation message that follows: it names the offending element. Fix the element order (the FatturaPA schema sequences are strict), add the missing mandatory element, or correct the value to match the allowed type/codelist. Re-validate against Schema_del_file_xml_FatturaPA_v1.2.2.xsd before re-submitting to the SdI.",
+      "example": "<!-- WRONG: PECDestinatario before ContattiTrasmittente --> ... <CodiceDestinatario>0000000</CodiceDestinatario><PECDestinatario>x@pec.it</PECDestinatario><ContattiTrasmittente/>  <!-- RIGHT --> <CodiceDestinatario>0000000</CodiceDestinatario><ContattiTrasmittente/><PECDestinatario>x@pec.it</PECDestinatario>"
+    },
+    "00300": {
+      "format": "fatturapa",
+      "title": "IdFiscaleIVA del CedentePrestatore non valido",
+      "explanation": "The supplier's VAT identifier (CedentePrestatore/DatiAnagrafici/IdFiscaleIVA) is not well-formed. For an Italian supplier IdPaese must be 'IT' and IdCodice must be exactly 11 digits.",
+      "suggested_fix": "Set IdPaese to a valid ISO 3166-1 alpha-2 country code; for IT, make IdCodice the 11-digit partita IVA (no spaces, no 'IT' prefix inside IdCodice).",
+      "example": "<IdFiscaleIVA><IdPaese>IT</IdPaese><IdCodice>01234567890</IdCodice></IdFiscaleIVA>"
+    },
+    "00301": {
+      "format": "fatturapa",
+      "title": "IdFiscaleIVA del CessionarioCommittente non valido",
+      "explanation": "The buyer's VAT identifier (CessionarioCommittente/DatiAnagrafici/IdFiscaleIVA) is not well-formed. For an Italian buyer IdPaese must be 'IT' and IdCodice must be exactly 11 digits.",
+      "suggested_fix": "Set IdPaese to a valid ISO country code; for IT, make IdCodice the 11-digit partita IVA. If the buyer is a private individual or has no VAT number, omit IdFiscaleIVA and use CodiceFiscale instead.",
+      "example": "<IdFiscaleIVA><IdPaese>IT</IdPaese><IdCodice>09876543210</IdCodice></IdFiscaleIVA>"
+    },
+    "00305": {
+      "format": "fatturapa",
+      "title": "CodiceFiscale del CessionarioCommittente non valido",
+      "explanation": "The buyer's Italian tax code (CessionarioCommittente/DatiAnagrafici/CodiceFiscale) is not a valid codice fiscale: it must be 16 alphanumeric characters (natural person) or 11 digits (entity).",
+      "suggested_fix": "Use the 16-character codice fiscale for individuals (e.g. RSSMRA80A01H501U) or the 11-digit code for organisations. Remove spaces and check the character/checksum pattern.",
+      "example": "<CodiceFiscale>RSSMRA80A01H501U</CodiceFiscale>"
+    },
+    "00311": {
+      "format": "fatturapa",
+      "title": "CodiceDestinatario non valido",
+      "explanation": "The recipient code (DatiTrasmissione/CodiceDestinatario) is not valid. It must be 6 alphanumeric characters for transmissions to a PA (FormatoTrasmissione=FPA12) or 7 for private recipients (FPR12). '0000000' (7 zeros) is the wildcard used when delivery is via PEC.",
+      "suggested_fix": "Use the 6-char IPA code for a PA recipient, or the 7-char SDI channel code the buyer provided. If you don't have it and the buyer has a PEC, set CodiceDestinatario to 0000000 and fill PECDestinatario (FPR12 only).",
+      "example": "<CodiceDestinatario>ABC1234</CodiceDestinatario>  <!-- or, with PEC --> <CodiceDestinatario>0000000</CodiceDestinatario>"
+    },
+    "00312": {
+      "format": "fatturapa",
+      "title": "CodiceDestinatario non coerente con FormatoTrasmissione",
+      "explanation": "The length of CodiceDestinatario does not match FormatoTrasmissione: FPA12 (PA) requires 6 characters, FPR12 (private) requires 7.",
+      "suggested_fix": "If FormatoTrasmissione is FPR12 use a 7-character code (or 0000000 with a PEC); if FPA12 use the 6-character IPA office code."
+    },
+    "00320": {
+      "format": "fatturapa",
+      "title": "CodiceDestinatario errato per FPA12",
+      "explanation": "For a Pubblica Amministrazione invoice (FormatoTrasmissione=FPA12) the CodiceDestinatario must be the 6-character codice univoco ufficio from the IPA index.",
+      "suggested_fix": "Look up the recipient office in https://indicepa.gov.it and use its 6-character code; do not pad to 7 characters and do not use 0000000 for a PA."
+    },
+    "00321": {
+      "format": "fatturapa",
+      "title": "CodiceDestinatario '0000000' ammesso solo con FPR12",
+      "explanation": "The wildcard recipient code 0000000 is only allowed for private-recipient transmissions (FormatoTrasmissione=FPR12), not for FPA12.",
+      "suggested_fix": "For FPR12 keep 0000000 and supply PECDestinatario. For a PA, use the real 6-character IPA office code instead."
+    },
+    "00400": {
+      "format": "fatturapa",
+      "title": "Natura presente con AliquotaIVA diversa da zero (riga di dettaglio)",
+      "explanation": "On a detail line (DettaglioLinee) you put a Natura code (exemption/reverse-charge/etc.) together with a non-zero AliquotaIVA. SdI rule 00400: when Natura is present on a line, AliquotaIVA must be 0.00.",
+      "suggested_fix": "If the line really is taxable, remove the Natura element and keep the real VAT rate. If it is exempt/non-taxable/reverse-charge, set AliquotaIVA to 0.00 and keep the correct Natura code (N1..N7 with sub-codes).",
+      "example": "<AliquotaIVA>0.00</AliquotaIVA><Natura>N2.2</Natura>"
+    },
+    "00401": {
+      "format": "fatturapa",
+      "title": "AliquotaIVA pari a zero senza Natura (riga di dettaglio)",
+      "explanation": "On a detail line you set AliquotaIVA to 0.00 but did not specify a Natura code. SdI rule 00401: a 0% line must carry a Natura code that explains why VAT is not applied.",
+      "suggested_fix": "Add the appropriate Natura code (N1 escluse, N2.x non soggette, N3.x non imponibili, N4 esenti, N5 regime del margine, N6.x inversione contabile, N7 IVA assolta in altro Stato UE). If VAT should actually apply, set the real rate instead of 0.00."
+    },
+    "00413": {
+      "format": "fatturapa",
+      "title": "Natura presente con AliquotaIVA diversa da zero (riepilogo)",
+      "explanation": "In a VAT summary line (DatiRiepilogo) Natura is present together with a non-zero AliquotaIVA. SdI rule 00413: a summary line with a Natura code must have AliquotaIVA = 0.00 (and vice-versa).",
+      "suggested_fix": "Split your summary so that taxable amounts go into a DatiRiepilogo with a real rate and no Natura, and non-taxable amounts go into a separate DatiRiepilogo with AliquotaIVA 0.00 and the matching Natura."
+    },
+    "00414": {
+      "format": "fatturapa",
+      "title": "AliquotaIVA pari a zero senza Natura (riepilogo)",
+      "explanation": "A VAT summary line (DatiRiepilogo) has AliquotaIVA 0.00 but no Natura code. SdI rule 00414: a 0% summary line must explain the reason via a Natura code.",
+      "suggested_fix": "Add the correct Natura code to that DatiRiepilogo block, or use the real VAT rate if the amount is in fact taxable."
+    },
+    "00415": {
+      "format": "fatturapa",
+      "title": "Natura N6 (inversione contabile) con EsigibilitaIVA diversa da 'S'",
+      "explanation": "For reverse-charge transactions (Natura N6 / N6.x) the SdI expects EsigibilitaIVA = 'S' (split/scissione is not applicable; immediate exigibility is the convention used here).",
+      "suggested_fix": "When Natura starts with N6, set EsigibilitaIVA to 'S'. Use 'I' (immediata) / 'D' (differita) only for ordinary taxable summaries; 'S' (scissione dei pagamenti) only for split-payment to a PA."
+    },
+    "00417": {
+      "format": "fatturapa",
+      "title": "CessionarioCommittente senza IdFiscaleIVA né CodiceFiscale",
+      "explanation": "The buyer block must identify the buyer with at least one of IdFiscaleIVA (VAT number) or CodiceFiscale (tax code). SdI rule 00417: both were omitted.",
+      "suggested_fix": "Add the buyer's partita IVA in IdFiscaleIVA (IdPaese + IdCodice) for a business, or the codice fiscale in CodiceFiscale for an individual / entity without VAT. For a foreign buyer without an Italian id, use IdFiscaleIVA with the foreign country code."
+    },
+    "00423": {
+      "format": "fatturapa",
+      "title": "Importo non coerente / valore negativo non ammesso",
+      "explanation": "An amount is not coherent with the document totals, or a negative line/total amount was used on a document type that does not allow it (e.g. TD01 invoice). Credit notes (TD04) use positive amounts on a TD04 document, not negatives on an invoice.",
+      "suggested_fix": "Recompute: ImportoTotaleDocumento should equal the sum over DatiRiepilogo of (ImponibileImporto + Imposta), adjusted for Arrotondamento, ScontoMaggiorazione, bollo, cassa and ritenuta as applicable. To reverse a previous invoice, issue a TD04 credit note with positive amounts rather than a negative invoice."
+    },
+    "00424": {
+      "format": "fatturapa",
+      "title": "Imposta non calcolata correttamente (riepilogo)",
+      "explanation": "In a DatiRiepilogo block the declared Imposta does not match ImponibileImporto x AliquotaIVA / 100 within the rounding tolerance (the SdI allows the difference declared in Arrotondamento, typically a cent or two).",
+      "suggested_fix": "Set Imposta = round(ImponibileImporto * AliquotaIVA / 100, 2). If you intentionally round differently, declare the delta in the Arrotondamento element of the same DatiRiepilogo block.",
+      "example": "<AliquotaIVA>22.00</AliquotaIVA><ImponibileImporto>5.00</ImponibileImporto><Imposta>1.10</Imposta>"
+    },
+    "00425": {
+      "format": "fatturapa",
+      "title": "Numero documento non valido",
+      "explanation": "The invoice number (DatiGeneraliDocumento/Numero) must contain at least one numeric digit. SdI rule 00425 rejects purely alphabetic numbers.",
+      "suggested_fix": "Include the running number in the Numero value, e.g. '2026/123' or 'INV-000123'."
+    },
+    "00427": {
+      "format": "fatturapa",
+      "title": "TipoRitenuta mancante con blocco DatiRitenuta presente",
+      "explanation": "When a DatiRitenuta block is present, TipoRitenuta is mandatory (RT01 ritenuta persone fisiche, RT02 persone giuridiche, RT03 INPS, RT04 ENASARCO, RT05 ENPAM, RT06 altro).",
+      "suggested_fix": "Add the TipoRitenuta element with the correct code, plus ImportoRitenuta, AliquotaRitenuta and CausalePagamento."
+    },
+    "00428": {
+      "format": "fatturapa",
+      "title": "TipoCassa o AlCassa non valido",
+      "explanation": "In DatiCassaPrevidenziale, TipoCassa must be one of the TC01..TC22 codes and the rates/amounts must be present and consistent.",
+      "suggested_fix": "Use the correct TipoCassa code for the professional fund, and fill AlCassa (rate), ImportoContributoCassa, ImponibileCassa and AliquotaIVA accordingly."
+    },
+    "00429": {
+      "format": "fatturapa",
+      "title": "Natura non valida",
+      "explanation": "The Natura code is not one of the allowed values. Since spec v1.6 (2021-01-01) the generic N2, N3 and N6 are no longer accepted at detail level — you must use the sub-codes (N2.1, N2.2, N3.1..N3.6, N6.1..N6.9).",
+      "suggested_fix": "Replace the generic code with the correct sub-code: N2.1 (non soggette art. 7-7septies), N2.2 (altre non soggette), N3.1..N3.6 (non imponibili: esportazioni, cessioni intra, ecc.), N6.1..N6.9 (inversione contabile per tipologia), N1/N4/N5/N7 as before."
+    },
+    "00430": {
+      "format": "fatturapa",
+      "title": "TipoDocumento non valido o incoerente",
+      "explanation": "TipoDocumento is not one of the allowed codes (TD01 fattura, TD02 acconto/anticipo, TD03 acconto su parcella, TD04 nota di credito, TD05 nota di debito, TD06 parcella, TD16..TD28 autofattura/reverse-charge/esterometro), or it is inconsistent with the rest of the document.",
+      "suggested_fix": "Pick the code that matches the operation. Use TD04 for a credit note (not a negative TD01), TD16/TD17/TD18/TD19 for the various reverse-charge self-invoices, TD24/TD25 for deferred invoices, TD20 for omitted-invoice self-billing."
+    },
+    "00437": {
+      "format": "fatturapa",
+      "title": "Natura/AliquotaIVA incoerente con il riepilogo (riga vs riepilogo)",
+      "explanation": "A detail line declares a Natura/AliquotaIVA combination for which there is no matching DatiRiepilogo block (or vice-versa). Every distinct (AliquotaIVA, Natura) pair used on the lines must have its own summary block.",
+      "suggested_fix": "For each distinct (AliquotaIVA, Natura) used across DettaglioLinee, add a DatiRiepilogo block with the same AliquotaIVA and Natura, the summed ImponibileImporto and the computed Imposta."
+    },
+    "00443": {
+      "format": "fatturapa",
+      "title": "Riepilogo con Natura N6 e Imposta diversa da zero",
+      "explanation": "For reverse-charge summaries (Natura N6.x) the supplier does not charge VAT, so Imposta must be 0.00 in that DatiRiepilogo block (the buyer self-assesses).",
+      "suggested_fix": "Set Imposta to 0.00 and AliquotaIVA to 0.00 in the N6.x summary block; the buyer issues the corresponding integration/self-invoice (TD16) with the VAT."
+    },
+    "00444": {
+      "format": "fatturapa",
+      "title": "RegimeFiscale non valido",
+      "explanation": "RegimeFiscale (CedentePrestatore/DatiAnagrafici/RegimeFiscale) is not one of the allowed codes RF01..RF19.",
+      "suggested_fix": "Use the code for your tax regime: RF01 ordinario, RF02/RF04/RF05/RF06 special schemes, RF18 altro, RF19 forfettario (regime forfettario L.190/2014). Remove any free text."
+    },
+    "00471": {
+      "format": "fatturapa",
+      "title": "TipoDocumento TD01/TD02/TD03/TD06 incompatibile con la presenza del CedentePrestatore = CessionarioCommittente",
+      "explanation": "For ordinary invoice document types the supplier (CedentePrestatore) and the buyer (CessionarioCommittente) must be different parties; a self-invoice must use the autofattura document types (TD16..TD27) instead.",
+      "suggested_fix": "If you are issuing a self-invoice (reverse charge / esterometro), change TipoDocumento to the matching TD1x..TD2x code; otherwise correct the party that was filled in by mistake."
+    },
+    "00472": {
+      "format": "fatturapa",
+      "title": "TipoDocumento di autofattura con CedentePrestatore diverso dal CessionarioCommittente",
+      "explanation": "For autofattura document types where the law requires it (e.g. TD20), the CessionarioCommittente that issues the document must coincide with the party indicated; mismatches are rejected.",
+      "suggested_fix": "Align the CedentePrestatore / CessionarioCommittente blocks with the rule for the chosen TDxx code (see the SdI 'controlli' table), or pick a different TipoDocumento."
+    },
+
+    "BR-DE-1": {
+      "format": "xrechnung",
+      "title": "Payment instructions (BG-16) required",
+      "explanation": "XRechnung requires the document to include payment instructions: at least one PAYMENT MEANS group (BG-16) describing how the invoice is to be paid.",
+      "suggested_fix": "Add a cac:PaymentMeans (UBL) / ram:SpecifiedTradeSettlementPaymentMeans (CII) with the payment means type code (BT-81) and the relevant account details (e.g. IBAN in BT-84 for a credit transfer)."
+    },
+    "BR-DE-2": {
+      "format": "xrechnung",
+      "title": "Seller contact (BG-6) required",
+      "explanation": "XRechnung requires the SELLER CONTACT group (BG-6) — a contact point at the seller — to be present.",
+      "suggested_fix": "Add cac:Contact under the seller party with a contact name (BT-41), a telephone number (BT-42) and an email address (BT-43)."
+    },
+    "BR-DE-3": {
+      "format": "xrechnung",
+      "title": "Seller city (BT-37) required",
+      "explanation": "XRechnung requires the seller's city name (BT-37) in the seller postal address.",
+      "suggested_fix": "Fill cac:PostalAddress/cbc:CityName for the AccountingSupplierParty (e.g. <cbc:CityName>Berlin</cbc:CityName>)."
+    },
+    "BR-DE-4": {
+      "format": "xrechnung",
+      "title": "Seller post code (BT-38) required",
+      "explanation": "XRechnung requires the seller's postal code (BT-38) in the seller postal address.",
+      "suggested_fix": "Fill cac:PostalAddress/cbc:PostalZone for the AccountingSupplierParty (e.g. <cbc:PostalZone>10115</cbc:PostalZone>)."
+    },
+    "BR-DE-5": {
+      "format": "xrechnung",
+      "title": "Seller contact point name (BT-41) required",
+      "explanation": "Within the SELLER CONTACT group, the contact point name (BT-41) must be present.",
+      "suggested_fix": "Add cbc:Name inside cac:Contact for the seller party (e.g. <cbc:Name>Buchhaltung</cbc:Name>)."
+    },
+    "BR-DE-6": {
+      "format": "xrechnung",
+      "title": "Seller contact telephone (BT-42) required",
+      "explanation": "Within the SELLER CONTACT group, the telephone number (BT-42) must be present.",
+      "suggested_fix": "Add cac:Contact/cbc:Telephone for the seller party (e.g. <cbc:Telephone>+49 30 1234567</cbc:Telephone>)."
+    },
+    "BR-DE-7": {
+      "format": "xrechnung",
+      "title": "Seller contact email (BT-43) required",
+      "explanation": "Within the SELLER CONTACT group, the email address (BT-43) must be present.",
+      "suggested_fix": "Add cac:Contact/cbc:ElectronicMail for the seller party (e.g. <cbc:ElectronicMail>rechnung@example.de</cbc:ElectronicMail>)."
+    },
+    "BR-DE-8": {
+      "format": "xrechnung",
+      "title": "Buyer city (BT-52) required",
+      "explanation": "XRechnung requires the buyer's city name (BT-52) in the buyer postal address.",
+      "suggested_fix": "Fill cac:PostalAddress/cbc:CityName for the AccountingCustomerParty."
+    },
+    "BR-DE-9": {
+      "format": "xrechnung",
+      "title": "Buyer post code (BT-53) required",
+      "explanation": "XRechnung requires the buyer's postal code (BT-53) in the buyer postal address.",
+      "suggested_fix": "Fill cac:PostalAddress/cbc:PostalZone for the AccountingCustomerParty."
+    },
+    "BR-DE-15": {
+      "format": "xrechnung",
+      "title": "Buyer reference / Leitweg-ID (BT-10) required",
+      "explanation": "XRechnung requires the Buyer reference (BT-10) — for public-sector invoices in Germany this is the Leitweg-ID that routes the invoice to the right authority.",
+      "suggested_fix": "Set cbc:BuyerReference (UBL) / ram:BuyerReference (CII) to the Leitweg-ID the public buyer gave you (format like '991-12345-67'). Don't leave it empty.",
+      "example": "<cbc:BuyerReference>991-12345-67</cbc:BuyerReference>"
+    },
+    "BR-DE-16": {
+      "format": "xrechnung",
+      "title": "Payment account identifier (BT-84) required for credit transfer",
+      "explanation": "When the payment means is a credit transfer / SEPA credit transfer (UNTDID 4461 code 30 or 58), the payee's account identifier (BT-84, the IBAN) must be present.",
+      "suggested_fix": "Add cac:PaymentMeans/cac:PayeeFinancialAccount/cbc:ID with the IBAN (and BT-85 the account holder name; BT-86 the BIC if needed)."
+    },
+    "BR-DE-17": {
+      "format": "xrechnung",
+      "title": "Invoice type code (BT-3) restricted",
+      "explanation": "XRechnung restricts the document type code (BT-3): allowed values are 326 (partial invoice), 380 (commercial invoice), 384 (corrected invoice), 389 (self-billed invoice), 381 (credit note), and 875/876/877 (construction-specific).",
+      "suggested_fix": "Set cbc:InvoiceTypeCode (or CreditNoteTypeCode 381) to one of the allowed values; 380 for a normal invoice, 384 for a correction (then add the preceding-invoice reference), 381 for a credit note."
+    },
+    "BR-DE-21": {
+      "format": "xrechnung",
+      "title": "Specification identifier (BT-24) must be the XRechnung CustomizationID",
+      "explanation": "Exactly one Specification identifier (BT-24) must carry the XRechnung CustomizationID for the version you target, e.g. 'urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0'. A plain EN 16931 CustomizationID is not an XRechnung.",
+      "suggested_fix": "Set cbc:CustomizationID to the XRechnung 3.0 URN (or the standard:extension URN if you use the extension). Keep cbc:ProfileID as 'urn:fdc:peppol.eu:2017:poacc:billing:01:1.0' if you also send via Peppol.",
+      "example": "<cbc:CustomizationID>urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0</cbc:CustomizationID>"
+    },
+    "BR-DE-23": {
+      "format": "xrechnung",
+      "title": "One PAYMENT MEANS must use exactly one of account / card / direct debit",
+      "explanation": "In a PAYMENT MEANS group XRechnung requires you to specify the Payment account identifier (BT-84) OR Payment card information (BG-18) OR Direct debit (BG-19) — exactly one of the three, not zero and not more than one.",
+      "suggested_fix": "Pick one settlement channel per cac:PaymentMeans: either a PayeeFinancialAccount (IBAN), or CardAccount details, or the direct-debit group (mandate reference + debited account); split into multiple PaymentMeans if you offer several."
+    },
+    "BR-DE-26": {
+      "format": "xrechnung",
+      "title": "Corrected invoice requires preceding-invoice reference",
+      "explanation": "When the document type code (BT-3) is 384 (corrected invoice), the document must reference the invoice it corrects (BG-3 PRECEDING INVOICE REFERENCE).",
+      "suggested_fix": "Add cac:BillingReference/cac:InvoiceDocumentReference with the original invoice number (BT-25) and, if available, its issue date (BT-26)."
+    },
+    "BR-DEX-01": {
+      "format": "xrechnung",
+      "title": "XRechnung extension structure error",
+      "explanation": "The document declares the XRechnung 'extension' CustomizationID (urn:...:xrechnung_3.0#conformant#urn:...:xrechnung_3.0_extension) but the use of extension elements is not consistent with the rules for the extension profile.",
+      "suggested_fix": "Either remove the extension elements and use the plain XRechnung CustomizationID, or correct the extension usage per the XRechnung extension specification (e.g. allowed sub-invoice lines, additional document references)."
+    }
+  }
+}
