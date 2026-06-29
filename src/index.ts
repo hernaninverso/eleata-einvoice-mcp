@@ -28,6 +28,21 @@ import {
 const API_BASE = (process.env.EINVOICE_API_BASE || "https://api.eleata.io").replace(/\/+$/, "");
 const API_KEY = process.env.EINVOICE_API_KEY || "";
 const USER_AGENT = "eleata-einvoice-mcp/0.1.0";
+const TIMEOUT_MS = 25_000;
+// Cap input so a runaway agent can't OOM the local process or send a huge payload.
+const MAX_INPUT_CHARS = 8_000_000;
+
+const FORMAT_VALUES = [
+  "auto",
+  "peppol-bis-3",
+  "en16931-ubl",
+  "en16931-cii",
+  "xrechnung-ubl",
+  "xrechnung-cii",
+  "factur-x",
+  "ubl",
+  "cii",
+];
 
 // ---- bundled offline error-code reference ---------------------------------
 type ErrorFix = {
@@ -43,7 +58,9 @@ try {
   // error-fixes.json sits at the package root, next to dist/.
   const raw = JSON.parse(readFileSync(join(here, "..", "error-fixes.json"), "utf8"));
   ERROR_FIXES = (raw.rules ?? {}) as Record<string, ErrorFix>;
-} catch {
+} catch (e) {
+  // explain_error_code is a core offline feature — make the failure visible (stderr, not the MCP channel).
+  process.stderr.write(`warning: could not load bundled error-fixes.json: ${(e as Error).message}\n`);
   ERROR_FIXES = {};
 }
 
@@ -67,12 +84,13 @@ const TOOLS = [
           description:
             "The invoice to validate. For XML formats, the raw XML text. " +
             "For a Factur-X / ZUGFeRD PDF, the base64-encoded PDF bytes (set is_pdf=true).",
+          maxLength: MAX_INPUT_CHARS,
         },
         format: {
           type: "string",
           description:
-            "Format hint: auto | peppol-bis-3 | en16931-ubl | en16931-cii | " +
-            "xrechnung-ubl | xrechnung-cii | factur-x | ubl | cii. Default: auto (the server sniffs it).",
+            "Format hint. Default: auto (the server sniffs XML vs PDF and the profile).",
+          enum: FORMAT_VALUES,
           default: "auto",
         },
         is_pdf: {
@@ -104,6 +122,7 @@ const TOOLS = [
         rule_id: {
           type: "string",
           description: "The rule id / error code, e.g. '00400', 'BR-DE-21', 'PEPPOL-EN16931-R053'.",
+          maxLength: 128,
         },
       },
       required: ["rule_id"],
@@ -111,11 +130,29 @@ const TOOLS = [
   },
 ];
 
+// ---- http helper (timeout + normalized errors, never leaks raw upstream bodies) ----
+type HttpOk = { ok: true; status: number; text: string };
+type HttpErr = { ok: false; message: string };
+
+async function httpRequest(url: string, init: RequestInit): Promise<HttpOk | HttpErr> {
+  try {
+    const res = await fetch(url, { ...init, signal: AbortSignal.timeout(TIMEOUT_MS) });
+    const text = await res.text();
+    return { ok: true, status: res.status, text };
+  } catch (e) {
+    const err = e as Error;
+    if (err.name === "TimeoutError" || err.name === "AbortError") {
+      return { ok: false, message: `the eleata API did not respond within ${TIMEOUT_MS / 1000}s` };
+    }
+    return { ok: false, message: `could not reach the eleata API at ${API_BASE}` };
+  }
+}
+
 // ---- handlers --------------------------------------------------------------
 async function validateEinvoice(args: {
-  content: string;
-  format?: string;
-  is_pdf?: boolean;
+  content?: unknown;
+  format?: unknown;
+  is_pdf?: unknown;
 }): Promise<string> {
   if (!API_KEY) {
     return (
@@ -123,71 +160,85 @@ async function validateEinvoice(args: {
       "Get a free key (200 validations/month, no card) at https://eleata.io/signup/."
     );
   }
-  const format = (args.format || "auto").trim();
-  const body = args.is_pdf ? Buffer.from(args.content, "base64") : Buffer.from(args.content, "utf8");
-  const contentType = args.is_pdf ? "application/pdf" : "application/xml";
+  const content = typeof args.content === "string" ? args.content : "";
+  if (!content) return "No invoice content provided.";
+  if (content.length > MAX_INPUT_CHARS) {
+    return (
+      `Input too large (${content.length} chars; max ${MAX_INPUT_CHARS}). ` +
+      "For large or many files, use the CLI (npx @eleata/validate-einvoice) or the batch endpoint."
+    );
+  }
+  const isPdf = args.is_pdf === true;
+  let format = typeof args.format === "string" ? args.format.trim() : "auto";
+  if (!FORMAT_VALUES.includes(format)) format = "auto";
+
+  const body = isPdf ? Buffer.from(content, "base64") : Buffer.from(content, "utf8");
+  const contentType = isPdf ? "application/pdf" : "application/xml";
   const url = `${API_BASE}/v1/validate?format=${encodeURIComponent(format)}`;
 
-  let res: Response;
-  try {
-    res = await fetch(url, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${API_KEY}`,
-        "Content-Type": contentType,
-        "User-Agent": USER_AGENT,
-      },
-      body,
-    });
-  } catch (e) {
-    return `Could not reach the eleata API at ${API_BASE}: ${(e as Error).message}`;
-  }
+  const r = await httpRequest(url, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${API_KEY}`, "Content-Type": contentType, "User-Agent": USER_AGENT },
+    body,
+  });
+  if (!r.ok) return `Validation request failed: ${r.message}.`;
 
-  const text = await res.text();
   let data: any;
   try {
-    data = JSON.parse(text);
+    data = JSON.parse(r.text);
   } catch {
-    return `eleata API returned a non-JSON response (HTTP ${res.status}): ${text.slice(0, 500)}`;
+    // Don't echo the raw body (could be an HTML error page / proxy trace).
+    return `The eleata API returned an unexpected (non-JSON) response (HTTP ${r.status}). It may be down or rate-limiting; try again shortly.`;
   }
-  if (!res.ok) {
-    const msg = data?.error?.message || data?.detail || text.slice(0, 400);
-    return `Validation request failed (HTTP ${res.status}): ${msg}`;
+  if (r.status < 200 || r.status >= 300) {
+    // Prefer the structured error message; never dump the raw body.
+    const msg =
+      (data && (data.error?.message || data.detail || data.message)) ||
+      `HTTP ${r.status}`;
+    return `Validation request failed: ${String(msg).slice(0, 300)}`;
   }
 
   const valid = data.valid === true;
-  const detected = data.format || format;
+  const detected = (typeof data.format === "string" && data.format) || format;
   const ruleset = data.ruleset || data.applied_ruleset || "";
-  const errors: any[] = Array.isArray(data.errors) ? data.errors : [];
+  const rawErrors =
+    (Array.isArray(data.errors) && data.errors) ||
+    (Array.isArray(data.issues) && data.issues) ||
+    (Array.isArray(data.violations) && data.violations) ||
+    [];
+  const errors = rawErrors.filter((e: unknown) => e && typeof e === "object") as Record<string, unknown>[];
 
   const lines: string[] = [];
-  lines.push(valid ? `✅ VALID — ${detected}` : `❌ INVALID — ${detected}  (${errors.length} issue${errors.length === 1 ? "" : "s"})`);
-  if (ruleset) lines.push(`ruleset: ${ruleset}`);
+  lines.push(
+    valid
+      ? `✅ VALID — ${detected}`
+      : `❌ INVALID — ${detected}  (${errors.length} issue${errors.length === 1 ? "" : "s"})`
+  );
+  if (ruleset) lines.push(`ruleset: ${String(ruleset)}`);
   for (const err of errors) {
-    const id = err.rule_id || err.id || "?";
-    const sev = err.severity ? `[${err.severity}] ` : "";
+    const id = (err.rule_id as string) || (err.id as string) || "?";
+    const sev = err.severity ? `[${String(err.severity)}] ` : "";
+    const loc = err.location ? `  (at ${String(err.location)})` : "";
     lines.push("");
-    lines.push(`• ${sev}${id}${err.location ? `  (at ${err.location})` : ""}`);
-    if (err.message) lines.push(`  ${err.message}`);
-    if (err.fix_hint) lines.push(`  fix: ${err.fix_hint}`);
+    lines.push(`• ${sev}${id}${loc}`);
+    if (err.message) lines.push(`  ${String(err.message)}`);
+    if (err.fix_hint) lines.push(`  fix: ${String(err.fix_hint)}`);
   }
   return lines.join("\n");
 }
 
 async function listFormats(): Promise<string> {
-  let res: Response;
-  try {
-    res = await fetch(`${API_BASE}/v1/formats`, { headers: { "User-Agent": USER_AGENT } });
-  } catch (e) {
-    return `Could not reach the eleata API at ${API_BASE}: ${(e as Error).message}`;
+  const r = await httpRequest(`${API_BASE}/v1/formats`, { headers: { "User-Agent": USER_AGENT } });
+  if (!r.ok) return `Could not list formats: ${r.message}.`;
+  if (r.status < 200 || r.status >= 300) {
+    return `Could not list formats (HTTP ${r.status}). The service may be temporarily unavailable.`;
   }
-  const text = await res.text();
-  if (!res.ok) return `Could not list formats (HTTP ${res.status}): ${text.slice(0, 400)}`;
-  return text;
+  return r.text;
 }
 
-function explainErrorCode(args: { rule_id: string }): string {
-  const id = (args.rule_id || "").trim();
+function explainErrorCode(args: { rule_id?: unknown }): string {
+  const id = typeof args.rule_id === "string" ? args.rule_id.trim() : "";
+  if (!id) return "No rule_id provided.";
   const fix = ERROR_FIXES[id];
   if (!fix) {
     const known = Object.keys(ERROR_FIXES);
@@ -197,7 +248,7 @@ function explainErrorCode(args: { rule_id: string }): string {
       (known.length
         ? `Known codes include: ${sample}${known.length > 10 ? ", …" : ""}. ` +
           `See the full list at https://eleata.io/error/.`
-        : `See https://eleata.io/error/.`)
+        : `The offline error-code reference is unavailable; see https://eleata.io/error/.`)
     );
   }
   const out: string[] = [];
