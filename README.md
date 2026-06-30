@@ -28,7 +28,7 @@ API plus a bundled offline error-code reference.
   "mcpServers": {
     "eleata-einvoice": {
       "command": "npx",
-      "args": ["-y", "@eleata/einvoice-mcp"],
+      "args": ["-y", "eleata-einvoice-mcp"],
       "env": { "EINVOICE_API_KEY": "your_free_key_here" }
     }
   }
