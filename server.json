@@ -1,0 +1,28 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.hernaninverso/eleata-einvoice-mcp",
+  "title": "Eleata e-Invoice Validator",
+  "description": "Validate EU e-invoices (Peppol BIS, XRechnung, Factur-X/ZUGFeRD, UBL, CII) and explain error codes, for AI agents.",
+  "version": "0.1.1",
+  "repository": {
+    "url": "https://github.com/hernaninverso/eleata-einvoice-mcp",
+    "source": "github"
+  },
+  "packages": [
+    {
+      "registryType": "npm",
+      "registryBaseUrl": "https://registry.npmjs.org",
+      "identifier": "eleata-einvoice-mcp",
+      "version": "0.1.1",
+      "transport": { "type": "stdio" },
+      "environmentVariables": [
+        {
+          "name": "EINVOICE_API_KEY",
+          "description": "Free API key for the eleata e-invoice validation backend (https://eleata.io/signup/)",
+          "isRequired": true,
+          "isSecret": true
+        }
+      ]
+    }
+  ]
+}

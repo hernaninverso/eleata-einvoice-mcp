@@ -1,0 +1,19 @@
+# https://smithery.ai/docs/config#smitheryyaml
+startCommand:
+  type: stdio
+  configSchema:
+    type: object
+    required:
+      - einvoiceApiKey
+    properties:
+      einvoiceApiKey:
+        type: string
+        description: Free API key for the eleata e-invoice validation backend (https://eleata.io/signup/). Injected as EINVOICE_API_KEY.
+  commandFunction: |-
+    (config) => ({
+      command: 'npx',
+      args: ['-y', 'eleata-einvoice-mcp'],
+      env: { EINVOICE_API_KEY: config.einvoiceApiKey }
+    })
+  exampleConfig:
+    einvoiceApiKey: your_free_eleata_api_key

@@ -1,6 +1,7 @@
 {
   "name": "eleata-einvoice-mcp",
-  "version": "0.1.0",
+  "mcpName": "io.github.hernaninverso/eleata-einvoice-mcp",
+  "version": "0.1.1",
   "description": "MCP server to validate EU e-invoices (Peppol, XRechnung, Factur-X, UBL/CII) and explain validation error codes — for AI coding agents (Claude, Cursor, Copilot).",
   "type": "module",
   "bin": {
